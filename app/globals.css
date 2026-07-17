@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #F4F1EA;
+  color: #0F2A44;
+}
+
+input, select, textarea {
+  border: 1px solid #d8d3c6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: white;
+}
+
+button {
+  border: 1px solid #0F2A44;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  background: white;
+  color: #0F2A44;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f0ede4;
+}
+
+.btn-primary {
+  background: #E8821E;
+  border: none;
+  color: #0F2A44;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background: #d67519;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  border: 1px solid #e5e0d3;
+}
