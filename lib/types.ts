@@ -75,11 +75,28 @@ export type ExpenditureCategory = (typeof EXPENDITURE_CATEGORIES)[number];
 export interface ExpenditureItem {
   id: UUID;
   personIds: UUID[];
+  splitType: "individual" | "joint";
+  splitOverridePercent?: number; // overrides household.jointExpenditureSplitPercent for this item only
   iht403Category: ExpenditureCategory;
   description: string;
   amount: number;
   taxYear: string;
   normalOrExceptional: "normal" | "exceptional";
+}
+
+// The single place this calculation happens — used by the income page,
+// the dashboard, and the PDF generator alike, so a change here can never
+// drift between what's shown on screen and what's printed.
+export function expenditureShareFor(item: ExpenditureItem, personId: UUID, household: Household): number {
+  if (item.splitType !== "joint") {
+    return item.personIds.includes(personId) ? item.amount : 0;
+  }
+  if (!item.personIds.includes(personId)) return 0;
+  const splitPercent = item.splitOverridePercent ?? household.jointExpenditureSplitPercent;
+  const orderedIds = household.people.map((p) => p.id).filter((id) => item.personIds.includes(id));
+  const isFirst = orderedIds[0] === personId;
+  const pct = isFirst ? splitPercent : 100 - splitPercent;
+  return item.amount * (pct / 100);
 }
 
 export interface FinancialAccount {
@@ -267,14 +284,14 @@ export function emptyRecord(): GiftFlowRecord {
 export function normalizeRecord(r: Partial<GiftFlowRecord> & { household: Household }): GiftFlowRecord {
   const blank = emptyRecord();
   const expenditure = (r.expenditure ?? blank.expenditure).map((e: any) => {
-    if (e.iht403Category) return e as ExpenditureItem;
-    // Older files stored a single free-text category. Treat that text as
-    // the user's own description and file it under "Other" until re-sorted.
+    if (e.iht403Category && e.splitType) return e as ExpenditureItem;
     return {
       id: e.id,
       personIds: e.personIds ?? [],
-      iht403Category: "Other" as ExpenditureCategory,
-      description: e.category ?? "",
+      splitType: e.splitType ?? "individual",
+      splitOverridePercent: e.splitOverridePercent,
+      iht403Category: e.iht403Category ?? "Other",
+      description: e.description ?? e.category ?? "",
       amount: e.amount ?? 0,
       taxYear: e.taxYear,
       normalOrExceptional: e.normalOrExceptional ?? "normal",

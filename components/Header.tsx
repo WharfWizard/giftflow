@@ -12,6 +12,7 @@ const NAV = [
   { href: "/gifts", label: "Gifts" },
   { href: "/transactions", label: "Transactions" },
   { href: "/income", label: "Income and expenditure" },
+  { href: "/print", label: "Evidence pack" },
 ];
 
 export function Header() {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { currentUKTaxYear, taxYearStartDate } from "@/lib/types";
+import { currentUKTaxYear, taxYearStartDate, expenditureShareFor } from "@/lib/types";
 import { committedGiftsThisYear } from "@/lib/reconcile";
 import { Badge } from "@/components/Badge";
 import { useView } from "@/lib/view";
@@ -18,7 +18,7 @@ export default function DashboardPage() {
 
   const expenditureThisYear = record.expenditure
     .filter((e) => e.taxYear === taxYear && (!personFilter || e.personIds.includes(personFilter)))
-    .reduce((s, e) => s + e.amount, 0);
+    .reduce((s, e) => s + (personFilter ? expenditureShareFor(e, personFilter, record.household) : e.amount), 0);
 
   const giftsThisYear = record.gifts.filter(
     (g) => g.taxYear === taxYear && g.reviewStatus !== "voided" && (!personFilter || g.donorSplits.some((s) => s.personId === personFilter))

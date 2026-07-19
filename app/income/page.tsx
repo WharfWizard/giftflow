@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import {
   IncomeItem, ExpenditureItem, FinancialAccount, EXPENDITURE_CATEGORIES, ExpenditureCategory,
-  currentUKTaxYear, scaffoldSevenYears, uuid,
+  currentUKTaxYear, scaffoldSevenYears, uuid, expenditureShareFor,
 } from "@/lib/types";
 import { recurringSurplus, committedGiftsThisYear } from "@/lib/reconcile";
 import { useView } from "@/lib/view";
@@ -78,17 +78,27 @@ export default function IncomePage() {
   const [expCategory, setExpCategory] = useState<ExpenditureCategory>("Household bills");
   const [expDescription, setExpDescription] = useState("");
   const [expAmount, setExpAmount] = useState("");
+  const [expJoint, setExpJoint] = useState(true);
+  const [expSplitOverride, setExpSplitOverride] = useState("");
+
+  const spouseId = record.household.people.find((p) => p.role === "spouse")?.id;
+  const canBeJoint = !!spouseId;
 
   const addExpenditure = () => {
     if (!expAmount) return;
+    const joint = canBeJoint && expJoint;
     const item: ExpenditureItem = {
-      id: uuid(), personIds: personFilter ? [personFilter] : [donorId],
+      id: uuid(),
+      personIds: joint ? record.household.people.map((p) => p.id) : [personFilter ?? donorId],
+      splitType: joint ? "joint" : "individual",
+      splitOverridePercent: joint && expSplitOverride ? Number(expSplitOverride) : undefined,
       iht403Category: expCategory, description: expDescription, amount: Number(expAmount),
       taxYear, normalOrExceptional: "normal",
     };
     update((r) => ({ ...r, expenditure: [...r.expenditure, item] }));
     setExpDescription("");
     setExpAmount("");
+    setExpSplitOverride("");
   };
 
   // --- Editing state, shared pattern for both income and expenditure ---
@@ -122,16 +132,31 @@ export default function IncomePage() {
   const [editExpId, setEditExpId] = useState<string | null>(null);
   const [editExpDesc, setEditExpDesc] = useState("");
   const [editExpAmount, setEditExpAmount] = useState("");
+  const [editExpJoint, setEditExpJoint] = useState(false);
+  const [editExpSplitOverride, setEditExpSplitOverride] = useState("");
 
   const startEditExp = (e: ExpenditureItem) => {
     setEditExpId(e.id);
     setEditExpDesc(e.description);
     setEditExpAmount(String(e.amount));
+    setEditExpJoint(e.splitType === "joint");
+    setEditExpSplitOverride(e.splitOverridePercent !== undefined ? String(e.splitOverridePercent) : "");
   };
   const saveEditExp = () => {
     update((r) => ({
       ...r,
-      expenditure: r.expenditure.map((e) => (e.id === editExpId ? { ...e, description: editExpDesc, amount: Number(editExpAmount) } : e)),
+      expenditure: r.expenditure.map((e) =>
+        e.id === editExpId
+          ? {
+              ...e,
+              description: editExpDesc,
+              amount: Number(editExpAmount),
+              splitType: canBeJoint && editExpJoint ? "joint" : "individual",
+              personIds: canBeJoint && editExpJoint ? record.household.people.map((p) => p.id) : e.personIds,
+              splitOverridePercent: canBeJoint && editExpJoint && editExpSplitOverride ? Number(editExpSplitOverride) : undefined,
+            }
+          : e
+      ),
     }));
     setEditExpId(null);
   };
@@ -145,10 +170,15 @@ export default function IncomePage() {
   const yearExpenditure = record.expenditure.filter((e) => e.taxYear === taxYear && (!personFilter || e.personIds.includes(personFilter)));
   const viewLabel = personFilter ? record.household.people.find((p) => p.id === personFilter)?.fullName ?? "" : "Household";
 
+  // In household view, a joint item is only ever counted once, at its
+  // full amount. In an individual's view, only their own share counts —
+  // this is the fix for what was previously a silent double-count risk.
+  const shareOfExp = (e: ExpenditureItem) => (personFilter ? expenditureShareFor(e, personFilter, record.household) : e.amount);
+
   const recurringNet = yearIncome
     .filter((i) => i.regularity === "recurring")
     .reduce((s, i) => s + (i.taxAttributable !== undefined ? i.grossAmount - i.taxAttributable : i.grossAmount - (i.taxDeducted ?? 0)), 0);
-  const expenditureTotal = yearExpenditure.reduce((s, e) => s + e.amount, 0);
+  const expenditureTotal = yearExpenditure.reduce((s, e) => s + shareOfExp(e), 0);
   const surplus = recurringSurplus(recurringNet, expenditureTotal);
   const committed = committedGiftsThisYear(record.gifts, taxYear);
   const buffer = surplus - committed;
@@ -164,7 +194,7 @@ export default function IncomePage() {
   const netIncomeAll = grossIncomeTotal - taxTotal;
 
   const expByCategory = EXPENDITURE_CATEGORIES.map((cat) => ({
-    cat, amount: yearExpenditure.filter((e) => e.iht403Category === cat).reduce((s, e) => s + e.amount, 0),
+    cat, amount: yearExpenditure.filter((e) => e.iht403Category === cat).reduce((s, e) => s + shareOfExp(e), 0),
   }));
   const surplusDeficitAll = netIncomeAll - expenditureTotal;
   const giftsFromIncomeThisYear = record.gifts.filter(
@@ -287,17 +317,55 @@ export default function IncomePage() {
                     <tr key={e.id} className="bg-[#F4F1EA]">
                       <td colSpan={2} className="py-1.5 px-3">
                         {editExpId === e.id ? (
-                          <div className="flex gap-2 items-center" onClick={(ev) => ev.stopPropagation()}>
-                            <input value={editExpDesc} onChange={(ev) => setEditExpDesc(ev.target.value)} className="flex-1" placeholder="Description" />
-                            <input type="number" value={editExpAmount} onChange={(ev) => setEditExpAmount(ev.target.value)} className="w-28" />
-                            <button onClick={saveEditExp} className="!py-1 !px-2 text-xs">Save</button>
-                            <button onClick={() => setEditExpId(null)} className="!py-1 !px-2 text-xs">Cancel</button>
+                          <div className="space-y-2" onClick={(ev) => ev.stopPropagation()}>
+                            <div className="flex gap-2 items-center">
+                              <input value={editExpDesc} onChange={(ev) => setEditExpDesc(ev.target.value)} className="flex-1" placeholder="Description" />
+                              <input type="number" value={editExpAmount} onChange={(ev) => setEditExpAmount(ev.target.value)} className="w-28" placeholder="Full amount" />
+                            </div>
+                            {canBeJoint && (
+                              <div>
+                                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                  <input type="checkbox" checked={editExpJoint} onChange={(ev) => setEditExpJoint(ev.target.checked)} className="!w-auto" />
+                                  Joint household expense
+                                </label>
+                                {editExpJoint && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs text-[#5f5e5a]">Split, first person&apos;s share</span>
+                                    <input
+                                      type="number"
+                                      placeholder={String(record.household.jointExpenditureSplitPercent)}
+                                      value={editExpSplitOverride}
+                                      onChange={(ev) => setEditExpSplitOverride(ev.target.value)}
+                                      className="w-20"
+                                    />
+                                    <span className="text-xs text-[#5f5e5a]">%</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <button onClick={saveEditExp} className="!py-1 !px-2 text-xs">Save</button>
+                              <button onClick={() => setEditExpId(null)} className="!py-1 !px-2 text-xs">Cancel</button>
+                            </div>
                           </div>
                         ) : (
                           <div className="flex justify-between items-center" onClick={(ev) => ev.stopPropagation()}>
-                            <span className="text-sm">{e.description || <span className="text-[#5f5e5a] italic">No description</span>}</span>
+                            <span className="text-sm">
+                              {e.description || <span className="text-[#5f5e5a] italic">No description</span>}
+                              {e.splitType === "joint" && (
+                                <span className="text-xs text-[#5f5e5a] ml-2">
+                                  (joint, {e.splitOverridePercent ?? record.household.jointExpenditureSplitPercent}/
+                                  {100 - (e.splitOverridePercent ?? record.household.jointExpenditureSplitPercent)} split)
+                                </span>
+                              )}
+                            </span>
                             <div className="flex items-center gap-3">
-                              <span className="text-sm">£{e.amount.toLocaleString()}</span>
+                              <span className="text-sm">
+                                £{shareOfExp(e).toLocaleString()}
+                                {personFilter && e.splitType === "joint" && (
+                                  <span className="text-xs text-[#5f5e5a]"> of £{e.amount.toLocaleString()}</span>
+                                )}
+                              </span>
                               <button onClick={() => startEditExp(e)} className="!py-1 !px-2 text-xs">Edit</button>
                               <button onClick={() => deleteExp(e)} className="!py-1 !px-2 text-xs">Delete</button>
                             </div>
@@ -381,6 +449,27 @@ export default function IncomePage() {
           <input placeholder="Amount" type="number" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} />
         </div>
         <input placeholder="Your own description, e.g. Utilities or Ground rent" value={expDescription} onChange={(e) => setExpDescription(e.target.value)} className="w-full" />
+        {canBeJoint && (
+          <div className="bg-[#F4F1EA] rounded p-2">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={expJoint} onChange={(e) => setExpJoint(e.target.checked)} className="!w-auto" />
+              Joint household expense, split between {record.household.people.map((p) => p.fullName).join(" and ")}
+            </label>
+            {expJoint && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs text-[#5f5e5a]">Split, first person&apos;s share</span>
+                <input
+                  type="number"
+                  placeholder={String(record.household.jointExpenditureSplitPercent)}
+                  value={expSplitOverride}
+                  onChange={(e) => setExpSplitOverride(e.target.value)}
+                  className="w-20"
+                />
+                <span className="text-xs text-[#5f5e5a]">% (blank uses the household default)</span>
+              </div>
+            )}
+          </div>
+        )}
         <button onClick={addExpenditure} className="btn-primary w-full">Add expenditure item</button>
       </div>
     </div>
