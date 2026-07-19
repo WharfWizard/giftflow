@@ -11,7 +11,7 @@ export default function HouseholdPage() {
 
   const [donorName, setDonorName] = useState(donor?.fullName ?? "");
   const [spouseName, setSpouseName] = useState(spouse?.fullName ?? "");
-  const [hasSpouse, setHasSpouse] = useState<boolean>(!!spouse || true);
+  const [hasSpouse, setHasSpouse] = useState<boolean>(!!spouse);
   const [split, setSplit] = useState(record.household.jointExpenditureSplitPercent);
 
   const save = () => {
@@ -61,11 +61,13 @@ export default function HouseholdPage() {
         )}
       </div>
 
-      <div className="card space-y-2">
-        <div className="text-sm font-medium">Household expenditure</div>
-        <label className="text-xs text-[#5f5e5a]">Default split for joint costs: {split} / {100 - split}</label>
-        <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} className="w-full" />
-      </div>
+      {hasSpouse && (
+        <div className="card space-y-2">
+          <div className="text-sm font-medium">Household expenditure</div>
+          <label className="text-xs text-[#5f5e5a]">Default split for joint costs: {split} / {100 - split}</label>
+          <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} className="w-full" />
+        </div>
+      )}
 
       <button onClick={save} className="btn-primary w-full">
         Save household
