@@ -1,7 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
+
+const PUBLIC_ROUTES = ["/privacy", "/disclaimer"];
 
 function Logo() {
   return (
@@ -12,6 +15,7 @@ function Logo() {
 }
 
 export function ResumeGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { gate, startNew, unlockWithPassword, resumePermission, openFile } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [wantPassword, setWantPassword] = useState(false);
@@ -20,6 +24,12 @@ export function ResumeGate({ children }: { children: React.ReactNode }) {
   const [confirmed, setConfirmed] = useState(false);
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Legal pages must be reachable regardless of whether a household file
+  // exists yet — they don't need, and shouldn't require, the gate at all.
+  if (PUBLIC_ROUTES.includes(pathname)) {
+    return <>{children}</>;
+  }
 
   if (gate.kind === "checking") {
     return <p className="text-sm text-[#5f5e5a]">Checking for a saved file…</p>;
@@ -103,8 +113,8 @@ export function ResumeGate({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="flex gap-4 text-xs mb-1">
-              <a href="https://www.academyoflifeplanning.com/privacy" target="_blank" rel="noreferrer" className="underline text-navy">Privacy Notice →</a>
-              <a href="https://www.academyoflifeplanning.com/disclaimer" target="_blank" rel="noreferrer" className="underline text-navy">Full Disclaimer →</a>
+              <a href="/privacy" target="_blank" rel="noreferrer" className="underline text-navy">Privacy Notice →</a>
+              <a href="/disclaimer" target="_blank" rel="noreferrer" className="underline text-navy">Full Disclaimer →</a>
             </div>
           </div>
 

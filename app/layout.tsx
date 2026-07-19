@@ -3,6 +3,7 @@ import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { ViewProvider } from "@/lib/view";
 import { Header } from "@/components/Header";
+import { Footer } from "@/components/Footer";
 import { ResumeGate } from "@/components/ResumeGate";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="max-w-4xl mx-auto px-6 py-8">
               <ResumeGate>{children}</ResumeGate>
             </main>
+            <Footer />
           </ViewProvider>
         </StoreProvider>
       </body>
