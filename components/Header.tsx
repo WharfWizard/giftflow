@@ -16,7 +16,7 @@ const NAV = [
 ];
 
 export function Header() {
-  const { saveStatus, saveNow, gate, record, lock, protectedFile, addPasswordNow } = useStore();
+  const { saveStatus, saveNow, gate, record, lock, protectedFile, addPasswordNow, resetToWelcome } = useStore();
   const { viewMode, setViewMode } = useView();
   const unlocked = gate.kind === "unlocked";
   const [showProtect, setShowProtect] = useState(false);
@@ -29,6 +29,15 @@ export function Header() {
     await addPasswordNow(pw1);
     setShowProtect(false);
     setPw1(""); setPw2("");
+  };
+
+  const doReset = () => {
+    const sure = confirm(
+      "This forgets the file currently connected in this browser. Nothing on your device is deleted — if you want this data back, you can still open the file directly. " +
+      "After resetting, you'll be able to start a new household or open a different file, such as one someone has sent you. Continue?"
+    );
+    if (!sure) return;
+    resetToWelcome();
   };
 
   return (
@@ -76,6 +85,9 @@ export function Header() {
                   Lock
                 </button>
               )}
+              <button onClick={doReset} className="!py-1 !px-3" title="Forget this file and start over, or open a different one">
+                Reset
+              </button>
             </>
           )}
         </div>

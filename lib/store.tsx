@@ -10,6 +10,7 @@ import {
   createNewFile,
   readFileAsText,
   parseOpenedFile,
+  clearStoredHandle,
 } from "./storage";
 import { newEnvelopeAndKey, unlockEnvelope, encryptWithKey, EncryptedEnvelope } from "./crypto";
 
@@ -38,6 +39,7 @@ interface StoreContextValue {
   saveNow: () => Promise<void>;
   lock: () => void;
   addPasswordNow: (password: string) => Promise<void>;
+  resetToWelcome: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -172,9 +174,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [record, persist]
   );
 
+  const resetToWelcome = useCallback(async () => {
+    await clearStoredHandle();
+    vaultRef.current = null;
+    setRecord(emptyRecord());
+    setProtectedFile(false);
+    setGate({ kind: "no_file" });
+  }, []);
+
   return (
     <StoreContext.Provider
-      value={{ record, update, saveStatus, gate, protectedFile, startNew, unlockWithPassword, resumePermission, openFile, saveNow, lock, addPasswordNow }}
+      value={{ record, update, saveStatus, gate, protectedFile, startNew, unlockWithPassword, resumePermission, openFile, saveNow, lock, addPasswordNow, resetToWelcome }}
     >
       {children}
     </StoreContext.Provider>

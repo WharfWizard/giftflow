@@ -16,7 +16,7 @@ function Logo() {
 
 export function ResumeGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { gate, startNew, unlockWithPassword, resumePermission, openFile } = useStore();
+  const { gate, startNew, unlockWithPassword, resumePermission, openFile, resetToWelcome } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [wantPassword, setWantPassword] = useState(false);
   const [pw1, setPw1] = useState("");
@@ -54,6 +54,15 @@ export function ResumeGate({ children }: { children: React.ReactNode }) {
     setBusy(false);
   };
 
+  const doReset = () => {
+    const sure = confirm(
+      "This forgets the file currently connected in this browser. Nothing on your device is deleted. " +
+      "After resetting, you'll be able to start a new household or open a different file, such as one someone has sent you. Continue?"
+    );
+    if (!sure) return;
+    resetToWelcome();
+  };
+
   return (
     <div className="max-w-md mx-auto">
       <div className="text-center mb-6">
@@ -66,9 +75,10 @@ export function ResumeGate({ children }: { children: React.ReactNode }) {
         <div className="card mb-3">
           <div className="text-sm font-medium mb-1">Continue where you left off</div>
           <div className="text-xs text-[#5f5e5a] mb-3">{gate.fileName}</div>
-          <button onClick={() => resumePermission()} className="btn-primary w-full">
+          <button onClick={() => resumePermission()} className="btn-primary w-full mb-2">
             Resume GiftFlow
           </button>
+          <button onClick={doReset} className="w-full text-xs">Not this file? Reset and start over</button>
         </div>
       )}
 
@@ -85,9 +95,10 @@ export function ResumeGate({ children }: { children: React.ReactNode }) {
             className="w-full mb-2"
           />
           {gate.error && <div className="text-xs text-red-700 mb-2">{gate.error}</div>}
-          <button onClick={handleUnlock} disabled={busy} className="btn-primary w-full">
+          <button onClick={handleUnlock} disabled={busy} className="btn-primary w-full mb-2">
             {busy ? "Checking…" : "Unlock"}
           </button>
+          <button onClick={doReset} className="w-full text-xs">Not this file? Reset and start over</button>
         </div>
       )}
 

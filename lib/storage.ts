@@ -53,6 +53,24 @@ async function getStoredHandle(): Promise<FSFileHandle | null> {
   }
 }
 
+// Forgets the connected file entirely, distinct from locking. Locking
+// re-prompts for the same file's password; this clears the handle so the
+// welcome screen offers a genuine fresh start — a new household, or
+// opening a different file. Nothing on disk is touched or deleted.
+export async function clearStoredHandle(): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Nothing to clear — fine.
+  }
+}
+
 export type ResumeState =
   | { status: "no_file" }
   | { status: "needs_permission"; fileName: string }
