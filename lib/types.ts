@@ -61,6 +61,7 @@ export interface IncomeItem {
   taxDeducted?: number;
   taxAttributable?: number;
   taxYear: string;
+  taxMonth?: number; // 1-12, UK tax month within taxYear — optional, for month-by-month entry
   regularity: Regularity;
   confirmedStatus: IncomeConfirmedStatus;
   linkedAccountId?: UUID;
@@ -81,6 +82,7 @@ export interface ExpenditureItem {
   description: string;
   amount: number;
   taxYear: string;
+  taxMonth?: number; // 1-12, UK tax month within taxYear — optional, for month-by-month entry
   normalOrExceptional: "normal" | "exceptional";
 }
 
@@ -185,6 +187,7 @@ export interface Household {
   id: UUID;
   people: Person[];
   jointExpenditureSplitPercent: number; // e.g. 50 means 50/50
+  incomeThreshold?: number; // user-set target for the month-by-month tracker, defaults to 100000
   createdAt: string;
   lastModified: string;
 }
@@ -224,6 +227,27 @@ export function taxYearStartDate(taxYear: string): Date {
   const startYear = parseInt(taxYear.split("/")[0], 10);
   return new Date(startYear, 3, 6); // 6 April
 }
+
+// UK tax months run 6th-to-5th, Month 1 = 6 April to 5 May, ... Month 12 =
+// 6 March to 5 April. Used for Malcolm's month-by-month running total,
+// not for anything tax-calculated — just labelling.
+export const TAX_MONTH_LABELS = [
+  "Month 1 (6 Apr - 5 May)", "Month 2 (6 May - 5 Jun)", "Month 3 (6 Jun - 5 Jul)",
+  "Month 4 (6 Jul - 5 Aug)", "Month 5 (6 Aug - 5 Sep)", "Month 6 (6 Sep - 5 Oct)",
+  "Month 7 (6 Oct - 5 Nov)", "Month 8 (6 Nov - 5 Dec)", "Month 9 (6 Dec - 5 Jan)",
+  "Month 10 (6 Jan - 5 Feb)", "Month 11 (6 Feb - 5 Mar)", "Month 12 (6 Mar - 5 Apr)",
+];
+
+export function currentUKTaxMonth(date = new Date()): number {
+  const monthsFromApril = (date.getMonth() - 3 + 12) % 12; // 0 = April
+  const dayAdjust = date.getDate() < 6 ? -1 : 0;
+  return ((monthsFromApril + dayAdjust + 12) % 12) + 1;
+}
+
+// Default value for the month-by-month tracker's income target, used when
+// the household hasn't set its own. Not asserted as a live tax figure —
+// the user sets whatever level actually matters to them.
+export const INCOME_TAPER_THRESHOLD = 100000;
 
 export function uuid(): UUID {
   return crypto.randomUUID();

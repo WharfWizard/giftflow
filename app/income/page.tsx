@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import {
   IncomeItem, ExpenditureItem, FinancialAccount, EXPENDITURE_CATEGORIES, ExpenditureCategory,
   currentUKTaxYear, scaffoldSevenYears, uuid, expenditureShareFor,
+  TAX_MONTH_LABELS, currentUKTaxMonth, INCOME_TAPER_THRESHOLD,
 } from "@/lib/types";
 import { recurringSurplus, committedGiftsThisYear } from "@/lib/reconcile";
 import { useView } from "@/lib/view";
@@ -35,6 +36,7 @@ export default function IncomePage() {
   const [taxYear, setTaxYear] = useState(activeDefault);
   const yearIndex = years.indexOf(taxYear);
   const personFilter = viewMode === "household" ? null : viewMode;
+  const isCurrentYear = taxYear === activeDefault;
 
   // --- Add income ---
   const [accountChoice, setAccountChoice] = useState<string>(NEW_ACCOUNT);
@@ -42,6 +44,7 @@ export default function IncomePage() {
   const [incomeCategory, setIncomeCategory] = useState<(typeof INCOME_CATEGORIES)[number]>("pensions");
   const [gross, setGross] = useState("");
   const [taxDeducted, setTaxDeducted] = useState("");
+  const [incomeMonth, setIncomeMonth] = useState<number>(currentUKTaxMonth());
 
   const addIncome = () => {
     if (!gross) return;
@@ -64,7 +67,7 @@ export default function IncomePage() {
       const item: IncomeItem = {
         id: uuid(), personId: personFilter ?? donorId, source, category: incomeCategory,
         grossAmount: Number(gross), taxDeducted: taxDeducted ? Number(taxDeducted) : undefined,
-        taxYear, regularity: "recurring", confirmedStatus: "estimated",
+        taxYear, taxMonth: isCurrentYear ? incomeMonth : undefined, regularity: "recurring", confirmedStatus: "estimated",
         linkedAccountId: accountId,
       };
       return { ...r, accounts, income: [...r.income, item] };
@@ -80,6 +83,7 @@ export default function IncomePage() {
   const [expAmount, setExpAmount] = useState("");
   const [expJoint, setExpJoint] = useState(true);
   const [expSplitOverride, setExpSplitOverride] = useState("");
+  const [expMonth, setExpMonth] = useState<number>(currentUKTaxMonth());
 
   const spouseId = record.household.people.find((p) => p.role === "spouse")?.id;
   const canBeJoint = !!spouseId;
@@ -93,7 +97,7 @@ export default function IncomePage() {
       splitType: joint ? "joint" : "individual",
       splitOverridePercent: joint && expSplitOverride ? Number(expSplitOverride) : undefined,
       iht403Category: expCategory, description: expDescription, amount: Number(expAmount),
-      taxYear, normalOrExceptional: "normal",
+      taxYear, taxMonth: isCurrentYear ? expMonth : undefined, normalOrExceptional: "normal",
     };
     update((r) => ({ ...r, expenditure: [...r.expenditure, item] }));
     setExpDescription("");
@@ -202,6 +206,27 @@ export default function IncomePage() {
   );
   const giftsFromIncomeTotal = giftsFromIncomeThisYear.reduce((s, g) => s + g.confirmedTotal, 0);
 
+  // Month-by-month breakdown, current tax year only. Cumulative running
+  // totals build up as entries are tagged with a month, matching how
+  // Malcolm actually enters figures through the year rather than in one
+  // annual lump sum.
+  const currentMonth = currentUKTaxMonth();
+  const monthlyRows = isCurrentYear
+    ? Array.from({ length: 12 }, (_, i) => {
+        const month = i + 1;
+        const monthIncome = yearIncome.filter((it) => it.taxMonth === month).reduce((s, it) => s + it.grossAmount, 0);
+        const monthExpenditure = yearExpenditure.filter((e) => e.taxMonth === month).reduce((s, e) => s + shareOfExp(e), 0);
+        return { month, monthIncome, monthExpenditure };
+      })
+    : [];
+  let cumulativeIncome = 0;
+  const monthlyWithRunningTotal = monthlyRows.map((row) => {
+    cumulativeIncome += row.monthIncome;
+    return { ...row, cumulativeIncome };
+  });
+  const incomeThreshold = record.household.incomeThreshold ?? INCOME_TAPER_THRESHOLD;
+  const thresholdRemaining = incomeThreshold - grossIncomeTotal;
+
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const toggleCategory = (key: string) => setOpenCategory((prev) => (prev === key ? null : key));
 
@@ -264,7 +289,10 @@ export default function IncomePage() {
                         ) : (
                           <div className="flex justify-between items-center" onClick={(e) => e.stopPropagation()}>
                             <div>
-                              <div className="text-sm">{i.source}</div>
+                              <div className="text-sm">
+                                {i.source}
+                                {i.taxMonth && <span className="text-xs text-[#5f5e5a] ml-2">({TAX_MONTH_LABELS[i.taxMonth - 1].split(" (")[0]})</span>}
+                              </div>
                               {i.taxDeducted !== undefined && (
                                 <div className="text-xs text-[#5f5e5a]">Tax deducted £{i.taxDeducted.toLocaleString()}</div>
                               )}
@@ -352,6 +380,7 @@ export default function IncomePage() {
                           <div className="flex justify-between items-center" onClick={(ev) => ev.stopPropagation()}>
                             <span className="text-sm">
                               {e.description || <span className="text-[#5f5e5a] italic">No description</span>}
+                              {e.taxMonth && <span className="text-xs text-[#5f5e5a] ml-2">({TAX_MONTH_LABELS[e.taxMonth - 1].split(" (")[0]})</span>}
                               {e.splitType === "joint" && (
                                 <span className="text-xs text-[#5f5e5a] ml-2">
                                   (joint, {e.splitOverridePercent ?? record.household.jointExpenditureSplitPercent}/
@@ -421,6 +450,75 @@ export default function IncomePage() {
         income — they only govern how much can still be gifted from a genuine, regular surplus.
       </p>
 
+      {isCurrentYear && (
+        <div className="card">
+          <div className="text-sm font-medium text-navy mb-1">This tax year, month by month</div>
+          <div className="text-xs text-[#5f5e5a] mb-3">
+            A running total as figures are entered through the year, tagged by month at the point of entry above.
+          </div>
+
+          <div className="mb-4">
+            <div className="flex justify-between items-center text-xs mb-1 flex-wrap gap-y-1">
+              <span className="text-[#5f5e5a]">Income so far this year, against your target</span>
+              <span className="flex items-center gap-1">
+                <span className="font-medium">£{grossIncomeTotal.toLocaleString()} of £</span>
+                <input
+                  type="number"
+                  value={incomeThreshold}
+                  onChange={(e) => {
+                    const value = Number(e.target.value) || 0;
+                    update((r) => ({ ...r, household: { ...r.household, incomeThreshold: value } }));
+                  }}
+                  className="!w-24 !py-0.5 text-right font-medium"
+                />
+              </span>
+            </div>
+            <div style={{ height: 8, borderRadius: 4, background: "#e5e0d3", overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.min(100, (grossIncomeTotal / incomeThreshold) * 100)}%`,
+                  background: grossIncomeTotal > incomeThreshold ? "#c0392b" : "#E8821E",
+                }}
+              />
+            </div>
+            <div className="text-xs mt-1" style={{ color: thresholdRemaining >= 0 ? "#5f5e5a" : "#791f1f" }}>
+              {thresholdRemaining >= 0
+                ? `£${thresholdRemaining.toLocaleString()} of headroom left below your target.`
+                : `£${Math.abs(thresholdRemaining).toLocaleString()} over your target.`}
+              {" "}This target defaults to £100,000 but is yours to set — the level worth staying under is
+              personal, not universal. A reference point only, not a tax calculation.
+            </div>
+          </div>
+
+          <table className="w-full text-xs">
+            <tbody>
+              <tr className="text-[#5f5e5a]">
+                <td className="py-1">Month</td>
+                <td className="py-1 text-right">Income</td>
+                <td className="py-1 text-right">Expenditure</td>
+                <td className="py-1 text-right">Cumulative income</td>
+              </tr>
+              {monthlyWithRunningTotal.map((row) => (
+                <tr
+                  key={row.month}
+                  className="border-t border-[#e5e0d3]"
+                  style={row.month === currentMonth ? { background: "#F4F1EA" } : undefined}
+                >
+                  <td className="py-1">
+                    {TAX_MONTH_LABELS[row.month - 1].split(" (")[0]}
+                    {row.month === currentMonth && <span className="text-[10px] text-brandOrange ml-1">current</span>}
+                  </td>
+                  <td className="py-1 text-right">{row.monthIncome ? `£${row.monthIncome.toLocaleString()}` : "—"}</td>
+                  <td className="py-1 text-right">{row.monthExpenditure ? `£${row.monthExpenditure.toLocaleString()}` : "—"}</td>
+                  <td className="py-1 text-right font-medium">£{row.cumulativeIncome.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="card space-y-2">
         <div className="text-sm font-medium">Add income for {taxYear}</div>
         <div className="grid grid-cols-2 gap-2">
@@ -436,6 +534,11 @@ export default function IncomePage() {
         </select>
         {accountChoice === NEW_ACCOUNT && (
           <input placeholder="Name this pension or account, e.g. Just annuity" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full" />
+        )}
+        {isCurrentYear && (
+          <select value={incomeMonth} onChange={(e) => setIncomeMonth(Number(e.target.value))} className="w-full">
+            {TAX_MONTH_LABELS.map((label, i) => <option key={i} value={i + 1}>{label}</option>)}
+          </select>
         )}
         <button onClick={addIncome} className="btn-primary w-full">Add income item</button>
       </div>
@@ -469,6 +572,11 @@ export default function IncomePage() {
               </div>
             )}
           </div>
+        )}
+        {isCurrentYear && (
+          <select value={expMonth} onChange={(e) => setExpMonth(Number(e.target.value))} className="w-full">
+            {TAX_MONTH_LABELS.map((label, i) => <option key={i} value={i + 1}>{label}</option>)}
+          </select>
         )}
         <button onClick={addExpenditure} className="btn-primary w-full">Add expenditure item</button>
       </div>

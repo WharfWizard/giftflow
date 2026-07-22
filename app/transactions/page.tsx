@@ -2,14 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Transaction, uuid, taxYearForDate } from "@/lib/types";
+import { Transaction, FinancialAccount, uuid, taxYearForDate } from "@/lib/types";
 import { linkTransaction } from "@/lib/reconcile";
 import { Badge } from "@/components/Badge";
+
+const NEW_ACCOUNT = "__new__";
 
 export default function TransactionsPage() {
   const { record, update } = useStore();
   const [date, setDate] = useState("");
-  const [accountName, setAccountName] = useState("");
+  const [accountChoice, setAccountChoice] = useState<string>(NEW_ACCOUNT);
+  const [newAccountName, setNewAccountName] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"in" | "out">("out");
@@ -17,22 +20,43 @@ export default function TransactionsPage() {
   const [selectedGiftId, setSelectedGiftId] = useState("");
   const [search, setSearch] = useState("");
 
+  const donorId = record.household.people.find((p) => p.role === "donor")?.id ?? "";
+
   const addTransaction = () => {
     if (!date || !amount) return;
-    const t: Transaction = {
-      id: uuid(),
-      date,
-      accountName: accountName || "Unnamed account",
-      description,
-      amount: Number(amount),
-      direction,
-      taxYear: taxYearForDate(date),
-      status: "unlinked",
-    };
-    update((r) => ({ ...r, transactions: [...r.transactions, t] }));
+    update((r) => {
+      let accounts = r.accounts;
+      let accountId: string | undefined = accountChoice;
+      let accountName = "";
+      if (accountChoice === NEW_ACCOUNT) {
+        if (!newAccountName.trim()) return r;
+        const acc: FinancialAccount = {
+          id: uuid(), institution: newAccountName, accountName: newAccountName,
+          ownerIds: [donorId], balancesByTaxYear: {},
+        };
+        accounts = [...accounts, acc];
+        accountId = acc.id;
+        accountName = acc.accountName;
+      } else {
+        accountName = accounts.find((a) => a.id === accountChoice)?.accountName ?? "Account";
+      }
+      const t: Transaction = {
+        id: uuid(),
+        date,
+        accountId,
+        accountName,
+        description,
+        amount: Number(amount),
+        direction,
+        taxYear: taxYearForDate(date),
+        status: "unlinked",
+      };
+      return { ...r, accounts, transactions: [...r.transactions, t] };
+    });
     setDate("");
     setDescription("");
     setAmount("");
+    setNewAccountName("");
   };
 
   const outgoingGiftCandidates = useMemo(() => {
@@ -69,7 +93,7 @@ export default function TransactionsPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
-  const [editAccount, setEditAccount] = useState("");
+  const [editAccountId, setEditAccountId] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editDirection, setEditDirection] = useState<"in" | "out">("out");
@@ -77,7 +101,7 @@ export default function TransactionsPage() {
   const startEdit = (t: Transaction) => {
     setEditingId(t.id);
     setEditDate(t.date);
-    setEditAccount(t.accountName);
+    setEditAccountId(t.accountId ?? record.accounts.find((a) => a.accountName === t.accountName)?.id ?? "");
     setEditDescription(t.description);
     setEditAmount(String(t.amount));
     setEditDirection(t.direction);
@@ -85,11 +109,21 @@ export default function TransactionsPage() {
 
   const saveEdit = () => {
     if (!editingId) return;
+    const account = record.accounts.find((a) => a.id === editAccountId);
     update((r) => ({
       ...r,
       transactions: r.transactions.map((t) =>
         t.id === editingId
-          ? { ...t, date: editDate, accountName: editAccount, description: editDescription, amount: Number(editAmount), direction: editDirection, taxYear: taxYearForDate(editDate) }
+          ? {
+              ...t,
+              date: editDate,
+              accountId: editAccountId || undefined,
+              accountName: account?.accountName ?? t.accountName,
+              description: editDescription,
+              amount: Number(editAmount),
+              direction: editDirection,
+              taxYear: taxYearForDate(editDate),
+            }
           : t
       ),
     }));
@@ -142,12 +176,18 @@ export default function TransactionsPage() {
           <input placeholder="Amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <input placeholder="Account, e.g. NatWest current" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+          <select value={accountChoice} onChange={(e) => setAccountChoice(e.target.value)}>
+            <option value={NEW_ACCOUNT}>+ Add a new account</option>
+            {record.accounts.map((a) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+          </select>
           <select value={direction} onChange={(e) => setDirection(e.target.value as "in" | "out")}>
             <option value="out">Money out</option>
             <option value="in">Money in</option>
           </select>
         </div>
+        {accountChoice === NEW_ACCOUNT && (
+          <input placeholder="Name this account, e.g. NatWest current" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full" />
+        )}
         <input placeholder="Description, e.g. FP to Chris Rhodes" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full" />
         <button onClick={addTransaction} className="btn-primary w-full">Add transaction</button>
       </div>
@@ -168,7 +208,10 @@ export default function TransactionsPage() {
                     <input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input value={editAccount} onChange={(e) => setEditAccount(e.target.value)} placeholder="Account" />
+                    <select value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)}>
+                      <option value="">Select an account</option>
+                      {record.accounts.map((a) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                    </select>
                     <select value={editDirection} onChange={(e) => setEditDirection(e.target.value as "in" | "out")}>
                       <option value="out">Money out</option>
                       <option value="in">Money in</option>
